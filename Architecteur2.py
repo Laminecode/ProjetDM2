@@ -863,8 +863,9 @@ if __name__ == "__main__":
         
         # app.run_agnes(n_clusters=3, visualize=True, plot_dendrogram=True)
         # comparison = app.compare_algorithms(n_clusters_kmeans=optimal_k1, n_clusters_kmedoids=optimal_k2, n_clusters_agnes=optimal_k3, n_clusters_diana=optimal_k4)
-        comparison = app.compare_algorithms()
+        # comparison = app.compare_algorithms()
         # print("\nAlgorithm Comparison:")
-        print(comparison)
+        # print(comparison)
+        app.run_agnes(n_clusters=3, visualize=True, plot_dendrogram=True)
     else:
         print("Failed to load data")
