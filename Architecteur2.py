@@ -846,6 +846,7 @@ class ClusteringApp:
         print(time_df.sort_values('Time (s)'))
         
         return df
+
 if __name__ == "__main__":
     app = ClusteringApp()
     filepath = "insur_3_new.csv"
