@@ -14,7 +14,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
-from scipy.cluster.hierarchy import dendrogram
+from scipy.cluster.hierarchy import dendrogram, linkage
 from sklearn.metrics import pairwise_distances
 
 import matplotlib.pyplot as plt
@@ -614,6 +614,7 @@ class ClusteringSection(QWidget):
 
         # Add the splitter to the layout
         layout.addWidget(splitter)
+    
     def find_optimal_clusters(self, algorithm):
         if self.parent and self.parent.normalized_data is not None:
             try:
@@ -693,6 +694,19 @@ class ClusteringSection(QWidget):
         else:
             QMessageBox.warning(self, "Warning", "Please load and preprocess data first!")
     
+    def _plot_dendrogram(self, **kwargs):
+        """
+        Plot hierarchical clustering dendrogram
+        """
+        plt.figure(figsize=(10, 7))
+        plt.title("Hierarchical Clustering Dendrogram")
+        
+        Z = linkage(self.normalized_data, 'ward')
+        dendrogram(Z, **kwargs)
+        plt.xlabel("Sample index")
+        plt.ylabel("Distance")
+        plt.show()
+  
     
     def run_agnes(self):
             if self.parent and self.parent.normalized_data is not None:
@@ -701,11 +715,13 @@ class ClusteringSection(QWidget):
                     linkage_method = self.agnes_linkage.currentText()
                     visualize = self.agnes_visualize.isChecked()
                     show_dendrogram = self.agnes_dendrogram.isChecked()
+
+                    
                     
                     # Call run_agnes method from parent
                     result = self.parent.run_agnes(
                         n_clusters=n_clusters,
-                        linkage=linkage_method,
+                        linkage_method=linkage_method,
                         visualize=visualize,
                         show_dendrogram=show_dendrogram
                     )
@@ -1143,8 +1159,95 @@ class ClusteringApp(QMainWindow):
                 result['figure'] = fig
             
             return result
-        
-        def run_agnes(self, n_clusters=3, linkage='ward', visualize=True, show_dendrogram=False):
+        def run_dbscan(self, eps=0.5, min_samples=5, visualize=True):
+            """Run DBSCAN clustering algorithm"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Run DBSCAN
+            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+            labels = dbscan.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Calculate metrics
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels[labels >= 0])
+            result['time'] = execution_time
+            result['noise_points'] = np.sum(labels == -1)
+            
+            # Calculate metrics if possible
+            if n_clusters > 1:
+                valid_indices = labels != -1
+                if np.sum(valid_indices) > 1:
+                    result['silhouette'] = silhouette_score(
+                        self.normalized_data[valid_indices], 
+                        labels[valid_indices]
+                    )
+                    result['calinski_harabasz'] = calinski_harabasz_score(
+                        self.normalized_data[valid_indices], 
+                        labels[valid_indices]
+                    )
+                    result['davies_bouldin'] = davies_bouldin_score(
+                        self.normalized_data[valid_indices], 
+                        labels[valid_indices]
+                    )
+                else:
+                    result['silhouette'] = float('nan')
+                    result['calinski_harabasz'] = float('nan')
+                    result['davies_bouldin'] = float('nan')
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                # Plot with special handling for noise points
+                unique_labels = set(labels)
+                colors = plt.cm.viridis(np.linspace(0, 1, len(unique_labels)))
+                
+                for k, col in zip(unique_labels, colors):
+                    if k == -1:
+                        col = [0, 0, 0, 1]  # Black for noise
+                    
+                    mask = labels == k
+                    plt.scatter(
+                        reduced_data[mask, 0], reduced_data[mask, 1],
+                        c=[col], marker='o' if k != -1 else 'x',
+                        s=50 if k != -1 else 30, alpha=0.7 if k != -1 else 0.5,
+                        label=f'Cluster {k}' if k != -1 else 'Noise'
+                    )
+                
+                plt.title(f'DBSCAN Clustering (eps={eps}, min_samples={min_samples}, clusters={n_clusters})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.legend()
+                plt.grid(True)
+                
+                result['figure'] = fig
+            
+            return result
+
+
+        def run_agnes(self, n_clusters=3, linkage_method='ward', visualize=True, show_dendrogram=False):
             """Run Agglomerative Hierarchical Clustering (AGNES)"""
             if self.normalized_data is None:
                 return None
@@ -1153,7 +1256,184 @@ class ClusteringApp(QMainWindow):
             start_time = timer()
             
             # Run AGNES
-            agnes = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage)
+            agnes = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage_method)
+            labels = agnes.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.title(f'AGNES Clustering (k={n_clusters}, linkage={linkage_method})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
+            # Show dendrogram in a separate window if requested
+            if show_dendrogram:
+                # Create separate figure for dendrogram
+                dendro_fig = plt.figure(figsize=(10, 6))
+                Z = linkage(self.normalized_data, method=linkage_method)
+                dendrogram(Z)
+                plt.title(f'AGNES Hierarchical Clustering Dendrogram (linkage={linkage_method})')
+                plt.xlabel('Sample index')
+                plt.ylabel('Distance')
+                plt.tight_layout()
+                plt.show(block=False)
+                
+                # Also include dendrogram in results figure
+                if 'figure' in result:
+                    # Convert single axes to subplot layout
+                    fig_old = result['figure']
+                    fig_new = plt.figure(figsize=(15, 6))
+                    
+                    # Create side-by-side plots
+                    ax1 = fig_new.add_subplot(1, 2, 1)
+                    ax2 = fig_new.add_subplot(1, 2, 2)
+                    
+                    # Copy clustering plot to left subplot
+                    for item in fig_old.axes[0].get_children():
+                        if isinstance(item, plt.matplotlib.collections.PathCollection):
+                            ax1.scatter(item.get_offsets()[:, 0], item.get_offsets()[:, 1], 
+                                       c=item.get_array(), cmap=item.get_cmap())
+                    
+                    # Copy labels and settings
+                    ax1.set_title(fig_old.axes[0].get_title())
+                    ax1.set_xlabel(fig_old.axes[0].get_xlabel())
+                    ax1.set_ylabel(fig_old.axes[0].get_ylabel())
+                    ax1.grid(True)
+                    
+                    # Add dendrogram to right subplot
+                    dendrogram(Z, ax=ax2)
+                    ax2.set_title('Hierarchical Clustering Dendrogram')
+                    ax2.set_xlabel('Sample index')
+                    ax2.set_ylabel('Distance')
+                    
+                    plt.tight_layout()
+                    plt.close(fig_old)
+                    result['figure'] = fig_new
+            # Show dendrogram in a separate window if requested
+            if show_dendrogram:
+                dendro_fig = plt.figure(figsize=(10, 6))
+                Z = scipy_linkage(self.normalized_data, method=linkage_method)
+                dendrogram(Z)
+                plt.title(f'AGNES Hierarchical Clustering Dendrogram (linkage={linkage_method})')
+                plt.xlabel('Sample index')
+                plt.ylabel('Distance')
+                plt.tight_layout()
+                plt.show(block=False)
+            
+            return result
+
+        def run_diana(self, n_clusters=3, visualize=True, show_dendrogram=False):
+            """Run Divisive Hierarchical Clustering (DIANA)"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # DIANA implementation using AgglomerativeClustering as approximation
+            # since sklearn doesn't provide DIANA
+            diana = AgglomerativeClustering(n_clusters=n_clusters)
+            labels = diana.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.title(f'DIANA Clustering (k={n_clusters})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
+            
+            # Show dendrogram in a separate window if requested
+            if show_dendrogram:
+                # For DIANA, we can approximate using complete linkage
+                # as it tends to separate larger clusters first
+                dendro_fig = plt.figure(figsize=(10, 6))
+                Z = linkage(self.normalized_data, method='complete')
+                dendrogram(Z)
+                plt.title('DIANA Hierarchical Clustering Dendrogram')
+                plt.xlabel('Sample index')
+                plt.ylabel('Distance')
+                plt.tight_layout()
+                plt.show(block=False)
+            
+            return result
+
+        def run_agnes(self, n_clusters=3, linkage_method='ward', visualize=True, show_dendrogram=False):
+            """Run Agglomerative Hierarchical Clustering (AGNES)"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Run AGNES
+            agnes = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage_method)
             labels = agnes.fit_predict(self.normalized_data)
             
             # Calculate execution time
@@ -1192,14 +1472,14 @@ class ClusteringApp(QMainWindow):
                     explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
                 
                 ax1.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
-                ax1.set_title(f'AGNES Clustering (k={n_clusters}, linkage={linkage})')
+                ax1.set_title(f'AGNES Clustering (k={n_clusters}, linkage={linkage_method})')
                 ax1.set_xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
                 if reduced_data.shape[1] > 1:
                     ax1.set_ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
                 ax1.grid(True)
                 
                 if show_dendrogram:
-                    Z = linkage(self.normalized_data, method=linkage)
+                    Z = linkage(self.normalized_data, method=linkage_method)
                     dendrogram(Z, ax=ax2)
                     ax2.set_title('Hierarchical Clustering Dendrogram')
                     ax2.set_xlabel('Sample index')
