@@ -14,8 +14,13 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score, pairwise_distances
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+<<<<<<< HEAD
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance import pdist
+=======
+from scipy.cluster.hierarchy import dendrogram, linkage
+from sklearn.metrics import pairwise_distances
+>>>>>>> c261d8f72717591b2d1a421c5fa94976f9e6dc28
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -697,6 +702,7 @@ class ClusteringSection(QWidget):
                 n_clusters = self.agnes_n_clusters.value()
                 linkage_method = self.agnes_linkage.currentText()
                 visualize = self.agnes_visualize.isChecked()
+<<<<<<< HEAD
                 plot_dendrogram = self.agnes_dendrogram.isChecked()
                 
                 # Call run_agnes method from parent
@@ -705,6 +711,16 @@ class ClusteringSection(QWidget):
                     linkage=linkage_method,
                     visualize=visualize,
                     plot_dendrogram=plot_dendrogram
+=======
+                show_dendrogram = self.agnes_dendrogram.isChecked()
+
+                # Call run_agnes method from parent
+                result = self.parent.run_agnes(
+                    n_clusters=n_clusters,
+                    linkage_method=linkage_method,
+                    visualize=visualize,
+                    show_dendrogram=show_dendrogram
+>>>>>>> c261d8f72717591b2d1a421c5fa94976f9e6dc28
                 )
                 
                 if result:
@@ -718,7 +734,11 @@ class ClusteringSection(QWidget):
                 QMessageBox.critical(self, "Error", f"Error running AGNES: {str(e)}")
         else:
             QMessageBox.warning(self, "Warning", "Please load and preprocess data first!")
+<<<<<<< HEAD
     
+=======
+
+>>>>>>> c261d8f72717591b2d1a421c5fa94976f9e6dc28
     def run_diana(self):
         if self.parent and self.parent.normalized_data is not None:
             try:
@@ -1101,9 +1121,205 @@ class ClusteringApp(QMainWindow):
                 
                 # For each cluster
                 for i in range(n_clusters):
+<<<<<<< HEAD
                     # Get all non-medoid points in this cluster
                     cluster_points = np.where(labels == i)[0]
                     non_medoids = np.setdiff1d(cluster_points, medoid_indices)
+=======
+                    cluster_points = X[labels == i]
+                    if len(cluster_points) > 0:
+                        intra_distances = pairwise_distances(cluster_points, metric='euclidean')
+                        min_idx = np.argmin(np.sum(intra_distances, axis=1))
+                        new_medoids[i] = cluster_points[min_idx]
+                
+                # Check convergence
+                if np.array_equal(medoids, new_medoids):
+                    break
+                
+                medoids = new_medoids
+            
+            return labels, medoids
+        
+        def run_kmeans(self, n_clusters=3, visualize=True):
+            """Run K-means clustering algorithm"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Run K-means
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Visualize using PCA if needed
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.title(f'K-means Clustering (k={n_clusters})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
+            
+            return result
+        
+        def run_kmedoids(self, n_clusters=3, max_iter=300, visualize=True):
+            """Run K-medoids clustering algorithm"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Run K-medoids
+            labels, medoids = self._kmedoids(self.normalized_data, n_clusters, max_iter)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_centers'] = medoids
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Visualization code similar to kmeans
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    reduced_medoids = pca.transform(medoids)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    reduced_medoids = medoids
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                fig = plt.figure(figsize=(10, 6))
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.scatter(reduced_medoids[:, 0], reduced_medoids[:, 1], c='red', marker='x', s=200, alpha=1)
+                plt.title(f'K-medoids Clustering (k={n_clusters})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
+            
+            return result
+
+        def run_dbscan(self, eps=0.5, min_samples=5, visualize=True):
+            """Run DBSCAN clustering algorithm"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Run DBSCAN
+            dbscan = DBSCAN(eps=eps, min_samples=min_samples)
+            labels = dbscan.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Calculate metrics
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels[labels >= 0])
+            result['time'] = execution_time
+            result['noise_points'] = np.sum(labels == -1)
+            
+            # Calculate metrics if possible
+            if n_clusters > 1:
+                valid_indices = labels != -1
+                if np.sum(valid_indices) > 1:
+                    result['silhouette'] = silhouette_score(
+                        self.normalized_data[valid_indices], 
+                        labels[valid_indices]
+                    )
+                    result['calinski_harabasz'] = calinski_harabasz_score(
+                        self.normalized_data[valid_indices], 
+                        labels[valid_indices]
+                    )
+                    result['davies_bouldin'] = davies_bouldin_score(
+                        self.normalized_data[valid_indices], 
+                        labels[valid_indices]
+                    )
+                else:
+                    result['silhouette'] = float('nan')
+                    result['calinski_harabasz'] = float('nan')
+                    result['davies_bouldin'] = float('nan')
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                # Plot with special handling for noise points
+                unique_labels = set(labels)
+                colors = plt.cm.viridis(np.linspace(0, 1, len(unique_labels)))
+                
+                for k, col in zip(unique_labels, colors):
+                    if k == -1:
+                        col = [0, 0, 0, 1]  # Black for noise
+>>>>>>> c261d8f72717591b2d1a421c5fa94976f9e6dc28
                     
                     if len(non_medoids) == 0:
                         continue
@@ -1502,6 +1718,141 @@ class ClusteringApp(QMainWindow):
         df.set_index('Algorithm', inplace=True)
         
         return df
+
+        def run_agnes(self, n_clusters=3, linkage_method='ward', visualize=True, show_dendrogram=False):
+            """Run Agglomerative Hierarchical Clustering (AGNES)"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Run AGNES
+            agnes = AgglomerativeClustering(n_clusters=n_clusters, linkage=linkage_method)
+            labels = agnes.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            # Create visualization
+            if visualize:
+                fig = plt.figure(figsize=(10, 6))
+                
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.title(f'AGNES Clustering (k={n_clusters}, linkage={linkage_method})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
+            
+            # Show dendrogram in a separate window if requested
+            if show_dendrogram:
+                plt.figure(figsize=(12, 8))
+                Z = linkage(self.normalized_data, method=linkage_method)
+                dendrogram(Z)
+                plt.title(f'AGNES Hierarchical Clustering Dendrogram (linkage={linkage_method})')
+                plt.xlabel('Sample index')
+                plt.ylabel('Distance')
+                plt.tight_layout()
+                plt.show()
+            
+            return result
+        
+        def run_diana(self, n_clusters=3, visualize=True, show_dendrogram=False):
+            """Run Divisive Hierarchical Clustering (DIANA)"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # DIANA implementation using AgglomerativeClustering as approximation
+            # since sklearn doesn't provide DIANA
+            diana = AgglomerativeClustering(n_clusters=n_clusters)
+            labels = diana.fit_predict(self.normalized_data)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.title(f'DIANA Clustering (k={n_clusters})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
+            
+            # Show dendrogram in a separate window if requested
+            if show_dendrogram:
+                plt.figure(figsize=(12, 8))
+                # For DIANA, we approximate using complete linkage
+                # as it tends to separate larger clusters first
+                Z = linkage(self.normalized_data, method='complete')
+                dendrogram(Z)
+                plt.title('DIANA Hierarchical Clustering Dendrogram')
+                plt.xlabel('Sample index')
+                plt.ylabel('Distance')
+                plt.tight_layout()
+                plt.show()
+            
+            return result
 
 
 def main():
