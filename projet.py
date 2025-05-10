@@ -20,8 +20,33 @@ from sklearn.metrics import pairwise_distances
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
+import multiprocessing
+from functools import partial
 
 from timeit import default_timer as timer
+
+# Add these at the top level of your file, outside any class
+def calculate_distances(X, centers):
+    """Calculate distances from points to cluster centers"""
+    return np.sqrt(((X[:, np.newaxis, :] - centers[np.newaxis, :, :]) ** 2).sum(axis=2))
+
+def assign_clusters(X, centers):
+    """Assign points to nearest cluster center"""
+    distances = calculate_distances(X, centers)
+    return np.argmin(distances, axis=1)
+
+def update_centers(X, labels, n_clusters):
+    """Update cluster centers based on mean of assigned points"""
+    centers = np.zeros((n_clusters, X.shape[1]))
+    for i in range(n_clusters):
+        mask = labels == i
+        if np.any(mask):
+            centers[i] = X[mask].mean(axis=0)
+    return centers
+
+def process_batch(batch_data, centers):
+    """Process a batch of data points in parallel"""
+    return assign_clusters(batch_data, centers)
 
 class MatplotlibCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100):
@@ -286,6 +311,7 @@ class ClusteringSection(QWidget):
         
         # Add tabs for each algorithm
         self.kmeans_tab = QWidget()
+        self.parallel_kmeans_tab = QWidget()  # Add this line
         self.kmedoids_tab = QWidget()
         self.agnes_tab = QWidget()
         self.diana_tab = QWidget()
@@ -294,6 +320,7 @@ class ClusteringSection(QWidget):
         self.results_tab = QWidget()
         
         self.tabs.addTab(self.kmeans_tab, "K-Means")
+        self.tabs.addTab(self.parallel_kmeans_tab, "Parallel K-Means")  # Add this line
         self.tabs.addTab(self.kmedoids_tab, "K-Medoids")
         self.tabs.addTab(self.agnes_tab, "AGNES")
         self.tabs.addTab(self.diana_tab, "DIANA")
@@ -303,6 +330,7 @@ class ClusteringSection(QWidget):
         
         # Initialize each tab
         self.init_kmeans_tab()
+        self.init_parallel_kmeans_tab()  # Add this line
         self.init_kmedoids_tab()
         self.init_agnes_tab()
         self.init_diana_tab()
@@ -343,6 +371,47 @@ class ClusteringSection(QWidget):
         # Run button
         run_button = QPushButton("Run K-Means")
         run_button.clicked.connect(self.run_kmeans)
+        
+        # Add widgets to main layout
+        layout.addWidget(params_group)
+        layout.addWidget(run_button)
+        layout.addStretch()
+    
+    def init_parallel_kmeans_tab(self):
+        layout = QVBoxLayout(self.parallel_kmeans_tab)
+        
+        # Parameters section
+        params_group = QGroupBox("Parallel K-Means Parameters")
+        params_layout = QGridLayout(params_group)
+        
+        # Number of clusters
+        n_clusters_label = QLabel("Number of clusters:")
+        self.parallel_kmeans_n_clusters = QSpinBox()
+        self.parallel_kmeans_n_clusters.setMinimum(2)
+        self.parallel_kmeans_n_clusters.setMaximum(20)
+        self.parallel_kmeans_n_clusters.setValue(3)
+        
+        # Number of jobs
+        n_jobs_label = QLabel("Number of processes:")
+        self.parallel_kmeans_n_jobs = QSpinBox()
+        self.parallel_kmeans_n_jobs.setMinimum(1)
+        self.parallel_kmeans_n_jobs.setMaximum(multiprocessing.cpu_count())
+        self.parallel_kmeans_n_jobs.setValue(multiprocessing.cpu_count())
+        
+        # Visual checkbox
+        self.parallel_kmeans_visualize = QCheckBox("Show visualization")
+        self.parallel_kmeans_visualize.setChecked(True)
+        
+        # Add widgets to params layout
+        params_layout.addWidget(n_clusters_label, 0, 0)
+        params_layout.addWidget(self.parallel_kmeans_n_clusters, 0, 1)
+        params_layout.addWidget(n_jobs_label, 1, 0)
+        params_layout.addWidget(self.parallel_kmeans_n_jobs, 1, 1)
+        params_layout.addWidget(self.parallel_kmeans_visualize, 2, 0, 1, 2)
+        
+        # Run button
+        run_button = QPushButton("Run Parallel K-Means")
+        run_button.clicked.connect(self.run_parallel_kmeans)
         
         # Add widgets to main layout
         layout.addWidget(params_group)
@@ -548,6 +617,14 @@ class ClusteringSection(QWidget):
         self.comp_kmeans_n_clusters.setValue(0)
         self.comp_kmeans_n_clusters.setSpecialValueText("Default")
         
+        # Add Parallel K-Means parameters
+        par_kmeans_k_label = QLabel("Parallel K-Means clusters:")
+        self.comp_parallel_kmeans_n_clusters = QSpinBox()
+        self.comp_parallel_kmeans_n_clusters.setMinimum(0)
+        self.comp_parallel_kmeans_n_clusters.setMaximum(20)
+        self.comp_parallel_kmeans_n_clusters.setValue(0)
+        self.comp_parallel_kmeans_n_clusters.setSpecialValueText("Default")
+        
         kmedoids_k_label = QLabel("K-Medoids clusters:")
         self.comp_kmedoids_n_clusters = QSpinBox()
         self.comp_kmedoids_n_clusters.setMinimum(0)
@@ -574,12 +651,14 @@ class ClusteringSection(QWidget):
         params_layout.addWidget(self.default_n_clusters, 0, 1)
         params_layout.addWidget(kmeans_k_label, 1, 0)
         params_layout.addWidget(self.comp_kmeans_n_clusters, 1, 1)
-        params_layout.addWidget(kmedoids_k_label, 2, 0)
-        params_layout.addWidget(self.comp_kmedoids_n_clusters, 2, 1)
-        params_layout.addWidget(agnes_k_label, 3, 0)
-        params_layout.addWidget(self.comp_agnes_n_clusters, 3, 1)
-        params_layout.addWidget(diana_k_label, 4, 0)
-        params_layout.addWidget(self.comp_diana_n_clusters, 4, 1)
+        params_layout.addWidget(par_kmeans_k_label, 2, 0)  # Add Parallel K-Means
+        params_layout.addWidget(self.comp_parallel_kmeans_n_clusters, 2, 1)  # Add Parallel K-Means
+        params_layout.addWidget(kmedoids_k_label, 3, 0)
+        params_layout.addWidget(self.comp_kmedoids_n_clusters, 3, 1)
+        params_layout.addWidget(agnes_k_label, 4, 0)
+        params_layout.addWidget(self.comp_agnes_n_clusters, 4, 1)
+        params_layout.addWidget(diana_k_label, 5, 0)
+        params_layout.addWidget(self.comp_diana_n_clusters, 5, 1)
         
         # Run button
         run_button = QPushButton("Compare All Algorithms")
@@ -665,6 +744,32 @@ class ClusteringSection(QWidget):
                 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error running K-Means: {str(e)}")
+        else:
+            QMessageBox.warning(self, "Warning", "Please load and preprocess data first!")
+    
+    def run_parallel_kmeans(self):
+        if self.parent and self.parent.normalized_data is not None:
+            try:
+                n_clusters = self.parallel_kmeans_n_clusters.value()
+                n_jobs = self.parallel_kmeans_n_jobs.value()
+                visualize = self.parallel_kmeans_visualize.isChecked()
+                
+                # Call run_parallel_kmeans method from parent
+                result = self.parent.run_parallel_kmeans(
+                    n_clusters=n_clusters, 
+                    n_jobs=n_jobs, 
+                    visualize=visualize
+                )
+                
+                if result:
+                    # Store for comparison
+                    self.results['parallel_kmeans'] = result
+                    
+                    # Display results
+                    self.display_results(f"Parallel K-Means Clustering (k={n_clusters}, processes={n_jobs})", result)
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error running Parallel K-Means: {str(e)}")
         else:
             QMessageBox.warning(self, "Warning", "Please load and preprocess data first!")
     
@@ -782,6 +887,7 @@ class ClusteringSection(QWidget):
                 
                 # Get individual k values or use default
                 kmeans_k = self.comp_kmeans_n_clusters.value() if self.comp_kmeans_n_clusters.value() > 0 else default_k
+                parallel_kmeans_k = self.comp_parallel_kmeans_n_clusters.value() if self.comp_parallel_kmeans_n_clusters.value() > 0 else default_k
                 kmedoids_k = self.comp_kmedoids_n_clusters.value() if self.comp_kmedoids_n_clusters.value() > 0 else default_k
                 agnes_k = self.comp_agnes_n_clusters.value() if self.comp_agnes_n_clusters.value() > 0 else default_k
                 diana_k = self.comp_diana_n_clusters.value() if self.comp_diana_n_clusters.value() > 0 else default_k
@@ -797,6 +903,16 @@ class ClusteringSection(QWidget):
                 kmeans_result = self.parent.run_kmeans(n_clusters=kmeans_k, visualize=False)
                 comparison_results['K-Means'] = kmeans_result
                 self.results_text.append("✓ K-Means completed\n")
+                QApplication.processEvents()
+                
+                # Parallel K-Means
+                parallel_kmeans_result = self.parent.run_parallel_kmeans(
+                    n_clusters=parallel_kmeans_k, 
+                    n_jobs=multiprocessing.cpu_count(),
+                    visualize=False
+                )
+                comparison_results['Parallel K-Means'] = parallel_kmeans_result
+                self.results_text.append("✓ Parallel K-Means completed\n")
                 QApplication.processEvents()
                 
                 # K-Medoids
@@ -1363,6 +1479,120 @@ class ClusteringApp(QMainWindow):
                 plt.ylabel('Distance')
                 plt.tight_layout()
                 plt.show()
+            
+            return result
+
+        def run_parallel_kmeans(self, n_clusters=3, max_iter=300, n_jobs=None, visualize=True):
+            """Run Parallel K-means clustering algorithm"""
+            if self.normalized_data is None:
+                return None
+            
+            result = {}
+            start_time = timer()
+            
+            # Get data
+            X = self.normalized_data
+            n_samples, n_features = X.shape
+            
+            # Set random state for reproducibility
+            np.random.seed(42)
+            
+            # Initialize centers randomly
+            indices = np.random.choice(n_samples, n_clusters, replace=False)
+            centers = X[indices]
+            
+            # Set number of processes
+            if n_jobs is None:
+                n_jobs = multiprocessing.cpu_count()
+            
+            # Create a pool of processes
+            pool = multiprocessing.Pool(processes=n_jobs)
+            
+            # Calculate batch size for parallel processing
+            batch_size = max(1, n_samples // n_jobs)
+            
+            # Split data into batches
+            batches = [X[i:min(i+batch_size, n_samples)] for i in range(0, n_samples, batch_size)]
+            
+            # Initialize labels
+            labels = np.zeros(n_samples, dtype=int)
+            
+            # Run K-means iterations
+            for iteration in range(max_iter):
+                old_centers = centers.copy()
+                
+                # Parallel assignment step - use the standalone function
+                partial_assign = partial(process_batch, centers=centers)
+                results = pool.map(partial_assign, batches)
+                
+                # Combine results from all batches
+                start_idx = 0
+                for batch_idx, batch_labels in enumerate(results):
+                    end_idx = start_idx + len(batch_labels)
+                    labels[start_idx:end_idx] = batch_labels
+                    start_idx = end_idx
+                
+                # Update centers - use the standalone function
+                centers = update_centers(X, labels, n_clusters)
+                
+                # Check for convergence
+                if np.allclose(old_centers, centers):
+                    break
+            
+            # Close the process pool
+            pool.close()
+            pool.join()
+            
+            # Calculate inertia - use the standalone function
+            distances = calculate_distances(X, centers)
+            inertia = np.sum(np.min(distances, axis=1) ** 2)
+            
+            # Calculate execution time
+            execution_time = timer() - start_time
+            
+            # Store results
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels
+            result['cluster_centers'] = centers
+            result['cluster_sizes'] = np.bincount(labels)
+            result['time'] = execution_time
+            result['n_jobs'] = n_jobs
+            result['iterations'] = iteration + 1
+            
+            # Calculate metrics
+            if len(np.unique(labels)) > 1:
+                result['silhouette'] = silhouette_score(self.normalized_data, labels)
+                result['calinski_harabasz'] = calinski_harabasz_score(self.normalized_data, labels)
+                result['davies_bouldin'] = davies_bouldin_score(self.normalized_data, labels)
+            else:
+                result['silhouette'] = float('nan')
+                result['calinski_harabasz'] = float('nan')
+                result['davies_bouldin'] = float('nan')
+            
+            if visualize:
+                # Visualize using PCA if needed
+                if self.normalized_data.shape[1] > 2:
+                    pca = PCA(n_components=2)
+                    reduced_data = pca.fit_transform(self.normalized_data)
+                    reduced_centers = pca.transform(centers)
+                    explained_variance = pca.explained_variance_ratio_
+                else:
+                    reduced_data = self.normalized_data
+                    reduced_centers = centers
+                    explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
+                
+                # Create visualization
+                fig = plt.figure(figsize=(10, 6))
+                plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
+                plt.scatter(reduced_centers[:, 0], reduced_centers[:, 1], c='red', marker='X', s=200)
+                plt.title(f'Parallel K-means Clustering (k={n_clusters}, processes={n_jobs})')
+                plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
+                if reduced_data.shape[1] > 1:
+                    plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
+                plt.colorbar(label='Cluster')
+                plt.grid(True)
+                
+                result['figure'] = fig
             
             return result
 

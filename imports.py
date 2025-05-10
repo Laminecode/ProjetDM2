@@ -9,3 +9,5 @@ from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance import pdist, squareform
 import time
 from timeit import default_timer as timer
+import multiprocessing
+from functools import partial

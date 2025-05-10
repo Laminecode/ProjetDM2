@@ -714,6 +714,115 @@ class ClusteringApp:
         plt.grid(True)
         plt.show()
     
+
+    def _calculate_distances(X, centers):
+        """Calculate distances from points to cluster centers"""
+        return np.sqrt(((X[:, np.newaxis, :] - centers[np.newaxis, :, :]) ** 2).sum(axis=2))
+
+    def _assign_clusters(self,X, centers):
+        """Assign points to nearest cluster center"""
+        distances = self._calculate_distances(X, centers)
+        return np.argmin(distances, axis=1)
+
+    def _update_centers(X, labels, n_clusters):
+        """Update cluster centers based on mean of assigned points"""
+        centers = np.zeros((n_clusters, X.shape[1]))
+        for i in range(n_clusters):
+            mask = labels == i
+            if np.any(mask):
+                centers[i] = X[mask].mean(axis=0)
+        return centers
+
+    def _process_batch(self,batch_data, centers):
+        """Process a batch of data points in parallel"""
+        return self._assign_clusters(batch_data, centers)
+
+    def parallel_kmeans(self,X, n_clusters=3, max_iter=300, n_jobs=None, random_state=None):
+        """
+        Parallel implementation of K-means clustering
+        
+        Parameters:
+        -----------
+        X : array-like of shape (n_samples, n_features)
+            Training data
+        n_clusters : int, default=3
+            Number of clusters to form
+        max_iter : int, default=300
+            Maximum number of iterations
+        n_jobs : int, default=None
+            Number of parallel processes to use. If None, use all available cores.
+        random_state : int, default=None
+            Random seed for reproducibility
+            
+        Returns:
+        --------
+        labels : array of shape (n_samples,)
+            Predicted cluster labels
+        centers : array of shape (n_clusters, n_features)
+            Cluster centers
+        inertia : float
+            Sum of squared distances to closest cluster center
+        n_iter : int
+            Number of iterations run
+        """
+        n_samples, n_features = X.shape
+        
+        # Set random state
+        if random_state is not None:
+            np.random.seed(random_state)
+        
+        # Initialize centers randomly
+        indices = np.random.choice(n_samples, n_clusters, replace=False)
+        centers = X[indices]
+        
+        # Set number of processes
+        if n_jobs is None:
+            n_jobs = multiprocessing.cpu_count()
+        
+        # Create a pool of processes
+        pool = multiprocessing.Pool(processes=n_jobs)
+        
+        # Calculate batch size for parallel processing
+        batch_size = max(1, n_samples // n_jobs)
+        
+        # Split data into batches
+        batches = [X[i:min(i+batch_size, n_samples)] for i in range(0, n_samples, batch_size)]
+        
+        # Initialize labels
+        labels = np.zeros(n_samples, dtype=int)
+        
+        # Run K-means iterations
+        for iteration in range(max_iter):
+            old_centers = centers.copy()
+            
+            # Parallel assignment step
+            partial_assign = partial(self._process_batch, centers=centers)
+            results = pool.map(partial_assign, batches)
+            
+            # Combine results from all batches
+            start_idx = 0
+            for batch_idx, batch_labels in enumerate(results):
+                end_idx = start_idx + len(batch_labels)
+                labels[start_idx:end_idx] = batch_labels
+                start_idx = end_idx
+            
+            # Update centers
+            centers = self._update_centers(X, labels, n_clusters)
+            
+            # Check for convergence
+            if np.allclose(old_centers, centers):
+                break
+        
+        # Close the process pool
+        pool.close()
+        pool.join()
+        
+        # Calculate inertia (sum of squared distances to centers)
+        distances = self._calculate_distances(X, centers)
+        inertia = np.sum(np.min(distances, axis=1) ** 2)
+        
+        return labels, centers, inertia, iteration + 1
+  
     def compare_algorithms(self, n_clusters=3, n_clusters_diana=None, n_clusters_kmeans=None,n_clusters_kmedoids=None, n_clusters_agnes=None):
         """
         Parameters:
