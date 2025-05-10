@@ -236,8 +236,7 @@ class ClusteringApp:
             
             silhouette = silhouette_score(self.normalized_data, cluster_labels)
             inertia = kmeans.inertia_
-            ch_score = calinski_harabasz_score(self.normalized_data, cluster_labels)
-            db_score = davies_bouldin_score(self.normalized_data, cluster_labels)
+            
             intra_class = self._calculate_intra_class_distance(self.normalized_data, cluster_labels)
             inter_class = self._calculate_inter_class_distance(self.normalized_data, cluster_labels)
 
@@ -249,8 +248,6 @@ class ClusteringApp:
                 'metrics': {
                     'silhouette_score': silhouette,
                     'inertia': inertia,
-                    'calinski_harabasz': ch_score,
-                    'davies_bouldin': db_score,
                     'intra_class_distance': intra_class,
                     'inter_class_distance': inter_class,
                     'n_clusters': n_clusters,
@@ -554,10 +551,8 @@ class ClusteringApp:
             
             # Calculate metrics
             silhouette = silhouette_score(X, labels)
-            ch_score = calinski_harabasz_score(X, labels)
-            db_score = davies_bouldin_score(X, labels)
-            intra_class = self._calculate_intra_class_distance(X, labels)
-            inter_class = self._calculate_inter_class_distance(X, labels)
+            
+            
 
             end_time = timer()
             execution_time = end_time - start_time
@@ -569,10 +564,7 @@ class ClusteringApp:
                 'labels': labels,
                 'metrics': {
                     'silhouette_score': silhouette,
-                    'calinski_harabasz': ch_score,
-                    'davies_bouldin': db_score,
-                    'intra_class_distance': intra_class,
-                    'inter_class_distance': inter_class,
+                    
                     'n_clusters': len(clusters),
                     'execution_time': execution_time
                 }
@@ -585,8 +577,7 @@ class ClusteringApp:
             
             print(f"DIANA clustering completed with {len(clusters)} clusters")
             print(f"Silhouette Score: {silhouette:.3f}")
-            print(f"Calinski-Harabasz Index: {ch_score:.3f}")
-            print(f"Davies-Bouldin Index: {db_score:.3f}")
+            
             
             return self.results['diana']
             
@@ -890,16 +881,14 @@ class ClusteringApp:
             
             # Calculate metrics
             silhouette = silhouette_score(filtered_data, filtered_labels)
-            ch_score = calinski_harabasz_score(filtered_data, filtered_labels)
-            db_score = davies_bouldin_score(filtered_data, filtered_labels)
+            
             intra_class = self._calculate_intra_class_distance(filtered_data, filtered_labels)
             inter_class = self._calculate_inter_class_distance(filtered_data, filtered_labels)
             
             metrics.append({
                 'Algorithm': algo.upper(),
                 'Silhouette': silhouette,
-                'Calinski-Harabasz': ch_score,
-                'Davies-Bouldin': db_score,
+                
                 'Inertia': result['metrics'].get('inertia', np.nan),
                 'Intra-Class': intra_class,
                 'Inter-Class': inter_class,

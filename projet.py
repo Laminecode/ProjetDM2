@@ -479,9 +479,7 @@ class ClusteringSection(QWidget):
         self.agnes_n_clusters.setValue(3)
         
         # Linkage method
-        linkage_label = QLabel("Linkage method:")
-        self.agnes_linkage = QComboBox()
-        self.agnes_linkage.addItems(['ward', 'complete', 'average', 'single'])
+       
         
         # Find optimal button
         self.agnes_find_optimal = QPushButton("Find Optimal k")
@@ -498,8 +496,6 @@ class ClusteringSection(QWidget):
         params_layout.addWidget(n_clusters_label, 0, 0)
         params_layout.addWidget(self.agnes_n_clusters, 0, 1)
         params_layout.addWidget(self.agnes_find_optimal, 0, 2)
-        params_layout.addWidget(linkage_label, 1, 0)
-        params_layout.addWidget(self.agnes_linkage, 1, 1)
         params_layout.addWidget(self.agnes_visualize, 2, 0)
         params_layout.addWidget(self.agnes_dendrogram, 2, 1)
         
@@ -726,6 +722,51 @@ class ClusteringSection(QWidget):
         else:
             QMessageBox.warning(self, "Warning", "Please load and preprocess data first!")
     
+    def calculate_intra_class_distance(self, data, labels):
+        """Calculate average distance between points within the same cluster"""
+        unique_labels = np.unique(labels)
+        if len(unique_labels) <= 1:
+            return float('nan')
+        
+        intra_class_distances = []
+        
+        for i in unique_labels:
+            if i == -1:  # Skip noise points (for DBSCAN)
+                continue
+                
+            cluster_points = data[labels == i]
+            if len(cluster_points) > 1:  # Need at least 2 points for distance
+                distances = pairwise_distances(cluster_points)
+                # Only consider upper triangle to avoid duplicates
+                intra_class_distances.append(np.mean(distances[np.triu_indices(len(cluster_points), k=1)]))
+        
+        return np.mean(intra_class_distances) if intra_class_distances else float('nan')
+
+    def calculate_inter_class_distance(self, data, labels):
+        """Calculate average distance between points in different clusters"""
+        unique_labels = np.unique(labels)
+        if len(unique_labels) <= 1:
+            return float('nan')
+        
+        inter_class_distances = []
+        
+        for i in unique_labels:
+            if i == -1:  # Skip noise points (for DBSCAN)
+                continue
+                
+            for j in unique_labels:
+                if j == -1 or j <= i:  # Skip noise and avoid duplicates
+                    continue
+                    
+                cluster_i_points = data[labels == i]
+                cluster_j_points = data[labels == j]
+                
+                if len(cluster_i_points) > 0 and len(cluster_j_points) > 0:
+                    distances = pairwise_distances(cluster_i_points, cluster_j_points)
+                    inter_class_distances.append(np.mean(distances))
+        
+        return np.mean(inter_class_distances) if inter_class_distances else float('nan')
+
     def run_kmeans(self):
         if self.parent and self.parent.normalized_data is not None:
             try:
@@ -803,14 +844,14 @@ class ClusteringSection(QWidget):
         if self.parent and self.parent.normalized_data is not None:
             try:
                 n_clusters = self.agnes_n_clusters.value()
-                linkage_method = self.agnes_linkage.currentText()
+                
                 visualize = self.agnes_visualize.isChecked()
                 show_dendrogram = self.agnes_dendrogram.isChecked()
 
                 # Call run_agnes method from parent
                 result = self.parent.run_agnes(
                     n_clusters=n_clusters,
-                    linkage_method=linkage_method,
+                    linkage_method="ward",
                     visualize=visualize,
                     show_dendrogram=show_dendrogram
                 )
@@ -820,7 +861,7 @@ class ClusteringSection(QWidget):
                     self.results['agnes'] = result
                     
                     # Display results
-                    self.display_results(f"AGNES Clustering (k={n_clusters}, linkage={linkage_method})", result)
+                    self.display_results(f"AGNES Clustering (k={n_clusters}", result)
                 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error running AGNES: {str(e)}")
@@ -1391,7 +1432,7 @@ class ClusteringApp(QMainWindow):
                     explained_variance = [1.0, 1.0] if self.normalized_data.shape[1] == 2 else [1.0]
                 
                 plt.scatter(reduced_data[:, 0], reduced_data[:, 1], c=labels, cmap='viridis', s=50, alpha=0.7)
-                plt.title(f'AGNES Clustering (k={n_clusters}, linkage={linkage_method})')
+                plt.title(f'AGNES Clustering (k={n_clusters}')
                 plt.xlabel(f'Component 1 ({explained_variance[0]:.2%} variance)')
                 if reduced_data.shape[1] > 1:
                     plt.ylabel(f'Component 2 ({explained_variance[1]:.2%} variance)')
@@ -1405,7 +1446,7 @@ class ClusteringApp(QMainWindow):
                 plt.figure(figsize=(12, 8))
                 Z = linkage(self.normalized_data, method=linkage_method)
                 dendrogram(Z)
-                plt.title(f'AGNES Hierarchical Clustering Dendrogram (linkage={linkage_method})')
+                plt.title(f'AGNES Hierarchical Clustering Dendrogram ')
                 plt.xlabel('Sample index')
                 plt.ylabel('Distance')
                 plt.tight_layout()
@@ -1472,7 +1513,7 @@ class ClusteringApp(QMainWindow):
                 plt.figure(figsize=(12, 8))
                 # For DIANA, we approximate using complete linkage
                 # as it tends to separate larger clusters first
-                Z = linkage(self.normalized_data, method='complete')
+                Z = linkage(self.normalized_data, method='ward')
                 dendrogram(Z)
                 plt.title('DIANA Hierarchical Clustering Dendrogram')
                 plt.xlabel('Sample index')
